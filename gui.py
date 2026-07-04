@@ -6,6 +6,16 @@ from parser import parse_discogs
 from tagger import preview, rename_files, write_tags
 
 
+def needs_review(album_data):
+    if not album_data.get("tracks"):
+        return True
+    if not album_data.get("album") and not album_data.get("album_artist"):
+        return True
+    if album_data.get("year") in {None, ""}:
+        return True
+    return False
+
+
 def build_preview_rows(discogs_text, folder):
     album_data = parse_discogs(discogs_text)
     rows = preview(folder, album_data)
@@ -98,6 +108,44 @@ class VinylApp:
             self.tree.insert("", "end", values=(row["track"], row["file"], row["title"], row["artist"]))
 
         self.status_var.set(f"Previewed {len(rows)} tracks from {album_data['album'] or album_data['album_artist']}")
+
+        if needs_review(album_data):
+            self.show_review_window(album_data, rows)
+
+    def show_review_window(self, album_data, rows):
+        review = tk.Toplevel(self.root)
+        review.title("Review Parsed Metadata")
+        review.geometry("720x520")
+
+        ttk.Label(review, text="Please review the parsed metadata before applying tags.").pack(anchor="w", padx=12, pady=(10, 6))
+
+        info = ttk.LabelFrame(review, text="Parsed info")
+        info.pack(fill="x", padx=12, pady=(0, 8))
+
+        ttk.Label(info, text=f"Album: {album_data.get('album', '')}").pack(anchor="w", padx=8, pady=2)
+        ttk.Label(info, text=f"Artist: {album_data.get('album_artist', '')}").pack(anchor="w", padx=8, pady=2)
+        ttk.Label(info, text=f"Year: {album_data.get('year', '')}").pack(anchor="w", padx=8, pady=2)
+        ttk.Label(info, text=f"Tracks parsed: {len(rows)}").pack(anchor="w", padx=8, pady=2)
+
+        preview_frame = ttk.LabelFrame(review, text="Track preview")
+        preview_frame.pack(fill="both", expand=True, padx=12, pady=(0, 10))
+
+        tree = ttk.Treeview(preview_frame, columns=("track", "title", "artist"), show="headings", height=12)
+        tree.heading("track", text="Track")
+        tree.heading("title", text="Title")
+        tree.heading("artist", text="Artist")
+        tree.column("track", width=60, anchor="center")
+        tree.column("title", width=320)
+        tree.column("artist", width=240)
+        tree.pack(fill="both", expand=True)
+
+        for row in rows:
+            tree.insert("", "end", values=(row["track"], row["title"], row["artist"]))
+
+        buttons = ttk.Frame(review)
+        buttons.pack(fill="x", padx=12, pady=(0, 10))
+        ttk.Button(buttons, text="Looks correct", command=review.destroy).pack(side="left")
+        ttk.Button(buttons, text="Cancel", command=review.destroy).pack(side="left", padx=(8, 0))
 
     def apply_tags(self):
         folder = self.folder_path.get().strip()

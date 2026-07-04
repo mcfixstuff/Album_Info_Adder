@@ -5,25 +5,38 @@ from tkinter import filedialog, messagebox, ttk
 from pathlib import Path
 
 try:
-    from mutagen.oggopus import OggOpus
+    from mutagen import File as MutagenFile
 except ModuleNotFoundError:  # pragma: no cover - exercised when dependency is missing
-    OggOpus = None
+    MutagenFile = None
 
 
 def _require_mutagen():
-    if OggOpus is None:
+    if MutagenFile is None:
         python_path = sys.executable or os.sys.executable
         raise ModuleNotFoundError(
-            "mutagen is required to edit Opus metadata. "
+            "mutagen is required to edit audio metadata. "
             f"This app is running with: {python_path}. "
             "Install it into that interpreter with: python -m pip install mutagen"
         )
-    return OggOpus
+    return MutagenFile
+
+
+def get_audio_files(folder):
+    files = []
+    for path in Path(folder).iterdir():
+        if not path.is_file():
+            continue
+        try:
+            if MutagenFile(path):
+                files.append(path)
+        except Exception:
+            continue
+
+    return sorted(files, key=lambda path: path.name.lower())
 
 
 def get_opus_files(folder):
-    files = sorted(Path(folder).glob("*.opus"), key=lambda path: path.name.lower())
-    return files
+    return get_audio_files(folder)
 
 
 def build_metadata_payload(tags):
@@ -45,14 +58,14 @@ def build_metadata_payload(tags):
 
 
 def load_metadata(file_path):
-    opus_class = _require_mutagen()
-    audio = opus_class(file_path)
+    mutagen_file = _require_mutagen()
+    audio = mutagen_file(file_path)
     return build_metadata_payload(audio)
 
 
 def save_metadata(file_path, values):
-    opus_class = _require_mutagen()
-    audio = opus_class(file_path)
+    mutagen_file = _require_mutagen()
+    audio = mutagen_file(file_path)
 
     for key, value in values.items():
         tag_name = {
@@ -146,7 +159,7 @@ class MetadataEditorApp:
             return
 
         self.folder_var.set(folder)
-        self.file_list = get_opus_files(folder)
+        self.file_list = get_audio_files(folder)
 
         for child in self.file_tree.get_children():
             self.file_tree.delete(child)

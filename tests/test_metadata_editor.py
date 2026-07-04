@@ -2,7 +2,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from metadata_editor import build_metadata_payload, get_opus_files
+from metadata_editor import build_metadata_payload, get_audio_files, get_opus_files
 
 
 class MetadataEditorTests(unittest.TestCase):
@@ -15,6 +15,16 @@ class MetadataEditorTests(unittest.TestCase):
             files = get_opus_files(tmpdir)
 
             self.assertEqual([p.name for p in files], ["01.opus", "02.opus"])
+
+    def test_get_audio_files_detects_mutagen_supported_audio_files(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            Path(tmpdir, "01.mp3").write_bytes(b"")
+            Path(tmpdir, "02.ogg").write_bytes(b"")
+            Path(tmpdir, "notes.txt").write_text("ignore")
+
+            files = get_audio_files(tmpdir)
+
+            self.assertEqual([p.name for p in files], ["01.mp3", "02.ogg"])
 
     def test_build_metadata_payload_normalizes_tag_values(self):
         payload = build_metadata_payload({

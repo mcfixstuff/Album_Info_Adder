@@ -109,6 +109,24 @@ def looks_like_written_by(text):
     return bool(re.search(r"written-by", text, re.I))
 
 
+def split_inline_tracks(text):
+    """Split a line like 'Song 1 3:29Song 2 4:21' into title chunks."""
+
+    text = text.strip()
+    if not text:
+        return []
+
+    if re.search(r"\d{1,2}:\d{2}", text):
+        chunks = []
+        for match in re.finditer(r"(?P<title>.+?)(?P<runtime>\d{1,2}:\d{2})(?=(?:.+?\d{1,2}:\d{2})|$)", text):
+            title = match.group("title").strip()
+            if title:
+                chunks.append(title)
+        return chunks
+
+    return [text]
+
+
 def parse_discogs(text):
 
     lines = [clean_line(x) for x in text.splitlines()]
@@ -134,6 +152,13 @@ def parse_discogs(text):
             album_artist = album_artist.strip()
             album = album.strip()
             break
+
+    if not album_artist and lines:
+        first = lines[0]
+        if " – " in first:
+            album_artist, album = first.split(" – ", 1)
+            album_artist = album_artist.strip()
+            album = album.strip()
 
     #
     # Year
@@ -217,29 +242,30 @@ def parse_discogs(text):
         #
 
         else:
+            for chunk in split_inline_tracks(line):
+                title = chunk
 
-            title = line
+                pieces = title.split()
+                if not pieces:
+                    continue
 
-            pieces = title.split()
-            if not pieces:
-                continue
+                if looks_like_track_code(pieces[0]) or re.match(r"^[A-Z]\d+", pieces[0], re.I):
+                    title = " ".join(pieces[1:])
+                elif not re.match(r"^[A-Z]{1,3}\d+", title, re.I):
+                    if re.match(r"^[A-Z][A-Za-z0-9 '&.-]+$", title) and title.lower() not in {"genre", "style", "year", "released", "country", "format", "label", "more images"}:
+                        pass
+                    else:
+                        continue
 
-            if looks_like_track_code(pieces[0]) or re.match(r"^[A-Z]\d+", pieces[0], re.I):
-                title = " ".join(pieces[1:])
-            elif not re.match(r"^[A-Z]{1,3}\d+", title, re.I):
-                continue
-            else:
-                title = title
+                title = remove_time(title)
 
-            title = remove_time(title)
+                if not title:
+                    continue
 
-            if not title:
-                continue
-
-            tracks.append({
-                "artist": album_artist,
-                "title": title
-            })
+                tracks.append({
+                    "artist": album_artist,
+                    "title": title
+                })
 
     return {
         "album": album,

@@ -18,20 +18,22 @@ import sys
 from pathlib import Path
 
 try:
-    from mutagen.oggopus import OggOpus
+    import mutagen
+    from mutagen import File as MutagenFile
 except ModuleNotFoundError:  # pragma: no cover - exercised when dependency is missing
-    OggOpus = None
+    mutagen = None
+    MutagenFile = None
 
 
 def _require_mutagen():
-    if OggOpus is None:
+    if mutagen is None or MutagenFile is None:
         python_path = sys.executable or os.sys.executable
         raise ModuleNotFoundError(
-            "mutagen is required to write Opus tags. "
+            "mutagen is required to write audio tags. "
             f"This app is running with: {python_path}. "
             "Install it into that interpreter with: python -m pip install mutagen"
         )
-    return OggOpus
+    return MutagenFile
 
 
 def sanitize_filename_part(value):
@@ -42,19 +44,28 @@ def sanitize_filename_part(value):
     return value or "track"
 
 
-def build_target_filename(index, track):
+def build_target_filename(index, track, suffix=".opus"):
     """Create a target filename like 01 Track Name.opus."""
 
     title = sanitize_filename_part(track.get("title", ""))
-    return f"{index:02d} {title}.opus"
+    return f"{index:02d} {title}{suffix}"
 
 
-def get_opus_files(folder):
+def get_audio_files(folder):
     """
-    Returns a naturally sorted list of .opus files.
+    Returns a naturally sorted list of audio files that mutagen can read.
     """
 
-    files = list(Path(folder).glob("*.opus"))
+    files = []
+    for path in Path(folder).iterdir():
+        if not path.is_file():
+            continue
+
+        try:
+            if MutagenFile(path):
+                files.append(path)
+        except Exception:
+            continue
 
     def sort_key(path):
         import re
@@ -73,24 +84,24 @@ def get_opus_files(folder):
 
 def write_tags(folder, album_data):
     """
-    Writes metadata to every opus file.
+    Writes metadata to every supported audio file.
 
     album_data should come directly from parser.py
     """
 
-    files = get_opus_files(folder)
+    files = get_audio_files(folder)
     tracks = album_data["tracks"]
 
     if len(files) != len(tracks):
         raise ValueError(
-            f"Found {len(files)} .opus files but parsed {len(tracks)} tracks."
+            f"Found {len(files)} supported audio files but parsed {len(tracks)} tracks."
         )
 
-    opus_class = _require_mutagen()
+    mutagen_file = _require_mutagen()
 
     for index, (file, track) in enumerate(zip(files, tracks), start=1):
 
-        audio = opus_class(file)
+        audio = mutagen_file(file)
 
         #
         # Always overwrite these
@@ -117,18 +128,19 @@ def write_tags(folder, album_data):
 
 
 def rename_files(folder, album_data):
-    """Rename each .opus file to match the track number and title."""
+    """Rename each supported audio file to match the track number and title."""
 
-    files = get_opus_files(folder)
+    files = get_audio_files(folder)
     tracks = album_data["tracks"]
 
     if len(files) != len(tracks):
         raise ValueError(
-            f"Found {len(files)} .opus files but parsed {len(tracks)} tracks."
+            f"Found {len(files)} supported audio files but parsed {len(tracks)} tracks."
         )
 
     for index, (file, track) in enumerate(zip(files, tracks), start=1):
-        target_name = build_target_filename(index, track)
+        suffix = file.suffix
+        target_name = build_target_filename(index, track, suffix)
         target_path = file.with_name(target_name)
 
         if file != target_path:
@@ -153,11 +165,11 @@ def preview(folder, album_data):
     ]
     """
 
-    files = get_opus_files(folder)
+    files = get_audio_files(folder)
 
     if len(files) != len(album_data["tracks"]):
         raise ValueError(
-            f"Found {len(files)} .opus files but parsed {len(album_data['tracks'])} tracks."
+            f"Found {len(files)} supported audio files but parsed {len(album_data['tracks'])} tracks."
         )
 
     preview_rows = []
