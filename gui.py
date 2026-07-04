@@ -1,0 +1,127 @@
+import tkinter as tk
+from tkinter import filedialog, messagebox, ttk
+from pathlib import Path
+
+from parser import parse_discogs
+from tagger import preview, rename_files, write_tags
+
+
+def build_preview_rows(discogs_text, folder):
+    album_data = parse_discogs(discogs_text)
+    rows = preview(folder, album_data)
+    return album_data, rows
+
+
+class VinylApp:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("Vinyl Metadata Helper")
+        self.root.geometry("760x560")
+
+        self.discogs_text = tk.StringVar()
+        self.folder_path = tk.StringVar()
+        self.year_var = tk.StringVar()
+        self.status_var = tk.StringVar(value="Paste Discogs text and choose a folder to begin.")
+
+        self._build_ui()
+
+    def _build_ui(self):
+        main = ttk.Frame(self.root, padding=12)
+        main.pack(fill="both", expand=True)
+
+        ttk.Label(main, text="Discogs text").pack(anchor="w")
+        self.text_box = tk.Text(main, height=16, wrap="word")
+        self.text_box.pack(fill="both", expand=True, pady=(4, 10))
+
+        controls = ttk.Frame(main)
+        controls.pack(fill="x", pady=(0, 10))
+
+        ttk.Button(controls, text="Choose folder", command=self.choose_folder).pack(side="left")
+        ttk.Label(controls, textvariable=self.folder_path, wraplength=480).pack(side="left", padx=(10, 0))
+
+        year_row = ttk.Frame(main)
+        year_row.pack(fill="x", pady=(0, 8))
+        ttk.Label(year_row, text="Year (optional):").pack(side="left")
+        ttk.Entry(year_row, textvariable=self.year_var, width=20).pack(side="left", padx=(6, 0))
+        ttk.Label(year_row, text="Leave blank to skip adding a year").pack(side="left", padx=(8, 0))
+
+        buttons = ttk.Frame(main)
+        buttons.pack(fill="x", pady=(0, 10))
+        ttk.Button(buttons, text="Preview", command=self.preview).pack(side="left")
+        ttk.Button(buttons, text="Apply tags", command=self.apply_tags).pack(side="left", padx=(8, 0))
+
+        self.tree = ttk.Treeview(main, columns=("track", "file", "title", "artist"), show="headings", height=10)
+        self.tree.heading("track", text="Track")
+        self.tree.heading("file", text="File")
+        self.tree.heading("title", text="Title")
+        self.tree.heading("artist", text="Artist")
+        self.tree.column("track", width=60, anchor="center")
+        self.tree.column("file", width=180)
+        self.tree.column("title", width=260)
+        self.tree.column("artist", width=220)
+        self.tree.pack(fill="both", expand=True)
+
+        ttk.Label(main, textvariable=self.status_var, wraplength=720).pack(anchor="w", pady=(8, 0))
+
+    def choose_folder(self):
+        folder = filedialog.askdirectory(title="Choose folder containing .opus files")
+        if folder:
+            self.folder_path.set(folder)
+            self.status_var.set(f"Folder selected: {folder}")
+
+    def preview(self):
+        folder = self.folder_path.get().strip()
+        if not folder:
+            messagebox.showwarning("Missing folder", "Choose a folder containing .opus files first.")
+            return
+
+        discogs_text = self.text_box.get("1.0", "end").strip()
+        if not discogs_text:
+            messagebox.showwarning("Missing input", "Paste Discogs text into the box first.")
+            return
+
+        try:
+            album_data, rows = build_preview_rows(discogs_text, folder)
+            year_value = self.year_var.get().strip()
+            if year_value:
+                album_data["year"] = year_value
+            elif self.year_var.get().strip() == "":
+                album_data["year"] = ""
+        except Exception as exc:
+            messagebox.showerror("Parse failed", str(exc))
+            return
+
+        for row in self.tree.get_children():
+            self.tree.delete(row)
+
+        for row in rows:
+            self.tree.insert("", "end", values=(row["track"], row["file"], row["title"], row["artist"]))
+
+        self.status_var.set(f"Previewed {len(rows)} tracks from {album_data['album'] or album_data['album_artist']}")
+
+    def apply_tags(self):
+        folder = self.folder_path.get().strip()
+        if not folder:
+            messagebox.showwarning("Missing folder", "Choose a folder containing .opus files first.")
+            return
+
+        discogs_text = self.text_box.get("1.0", "end").strip()
+        if not discogs_text:
+            messagebox.showwarning("Missing input", "Paste Discogs text into the box first.")
+            return
+
+        try:
+            album_data = parse_discogs(discogs_text)
+            year_value = self.year_var.get().strip()
+            if year_value:
+                album_data["year"] = year_value
+            elif self.year_var.get().strip() == "":
+                album_data["year"] = ""
+            count = write_tags(folder, album_data)
+            rename_files(folder, album_data)
+        except Exception as exc:
+            messagebox.showerror("Tagging failed", str(exc))
+            return
+
+        self.status_var.set(f"Updated {count} files successfully.")
+        messagebox.showinfo("Done", f"Updated {count} files.")
