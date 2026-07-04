@@ -1,0 +1,31 @@
+# Python bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Test / local artifacts
+.pytest_cache/
+.coverage
+htmlcov/
+*.log
+
+# Editor / OS junk
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Local runtime output
+*.opus.bak
+*.tmp
+
+# Keep only the main project files tracked; ignore local folders created by running the app
+output/
+build/
+dist/
