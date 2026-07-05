@@ -91,17 +91,43 @@ def split_various(line):
     return artist, title
 
 
+def extract_artist_album(line):
+    """Extract artist/album from a header line like 'Artist – Album'."""
+
+    candidate = clean_line(line)
+    if not candidate:
+        return None
+
+    lowered = candidate.lower()
+    if lowered.startswith(("genre:", "style:", "year:", "released:", "label:", "format:", "country:", "more images")):
+        return None
+    if "album cover" in lowered or "cover" in lowered and lowered.endswith("cover"):
+        pass
+
+    match = re.match(r"^(?P<artist>.+?)\s*(?:–|—|-|/|:)\s*(?P<album>.+)$", candidate)
+    if not match:
+        return None
+
+    artist = clean_line(match.group("artist")).rstrip("*")
+    album = clean_line(match.group("album"))
+    album = re.sub(r"\s+(album cover|cover)$", "", album, flags=re.I)
+    album = album.strip(" .")
+
+    if not artist or not album:
+        return None
+
+    if artist.lower() in {"genre", "style", "year", "released", "country", "format", "label", "more images"}:
+        return None
+
+    return artist, album
+
+
 def remove_time(title):
     """
-    Removes trailing runtimes.
-
-    Example:
-        Please Be There    3:48
-        -> Please Be There
+    Removes trailing runtimes in the form 3:48 or 03:48.
     """
 
-    title = re.sub(r"\s+\d+:\d+$", "", title).strip()
-    title = re.sub(r"\s+\d+\s*$", "", title).strip()
+    title = re.sub(r"\s+\d{1,2}:\d{2}$", "", title).strip()
     return title
 
 
@@ -109,12 +135,15 @@ def looks_like_written_by(text):
     return bool(re.search(r"written-by", text, re.I))
 
 
-def split_inline_tracks(text):
+def split_inline_tracks(text, keep_numeric_titles=False):
     """Split a line like 'Song 1 3:29Song 2 4:21' into title chunks."""
 
     text = text.strip()
     if not text:
         return []
+
+    if re.fullmatch(r"\d{1,2}:\d{2}", text):
+        return [text] if keep_numeric_titles else []
 
     if re.search(r"\d{1,2}:\d{2}", text):
         chunks = []
@@ -127,7 +156,29 @@ def split_inline_tracks(text):
     return [text]
 
 
-def parse_discogs(text):
+def split_track_segments(text, ignore_commas=False, ignore_parentheses=False):
+    """Split a line into multiple track-like chunks when requested.
+
+    When the user opts to ignore commas or parentheses, keep the full text intact
+    so titles such as 'Could You Love A Poor Boy, Dolly' stay together.
+    """
+
+    text = text.strip()
+    if not text:
+        return []
+
+    if ignore_commas or ignore_parentheses:
+        return [text]
+
+    if "," in text:
+        parts = [part.strip() for part in re.split(r"\s*,\s*", text) if part.strip()]
+        if len(parts) > 1:
+            return parts
+
+    return [text]
+
+
+def parse_discogs(text, ignore_commas=False, ignore_parentheses=False, keep_numeric_titles=False):
 
     lines = [clean_line(x) for x in text.splitlines()]
     lines = [x for x in lines if x]
@@ -147,18 +198,16 @@ def parse_discogs(text):
     #
 
     for line in lines:
-        if " – " in line and not line.lower().startswith(("label:", "format:", "country:", "released:", "genre:", "style:")):
-            album_artist, album = line.split(" – ", 1)
-            album_artist = album_artist.strip()
-            album = album.strip()
+        header = extract_artist_album(line)
+        if header:
+            album_artist, album = header
             break
 
     if not album_artist and lines:
         first = lines[0]
-        if " – " in first:
-            album_artist, album = first.split(" – ", 1)
-            album_artist = album_artist.strip()
-            album = album.strip()
+        header = extract_artist_album(first)
+        if header:
+            album_artist, album = header
 
     #
     # Year
@@ -242,30 +291,39 @@ def parse_discogs(text):
         #
 
         else:
-            for chunk in split_inline_tracks(line):
-                title = chunk
+            for segment in split_track_segments(line, ignore_commas=ignore_commas, ignore_parentheses=ignore_parentheses):
+                for chunk in split_inline_tracks(segment, keep_numeric_titles=keep_numeric_titles):
+                    title = chunk
 
-                pieces = title.split()
-                if not pieces:
-                    continue
-
-                if looks_like_track_code(pieces[0]) or re.match(r"^[A-Z]\d+", pieces[0], re.I):
-                    title = " ".join(pieces[1:])
-                elif not re.match(r"^[A-Z]{1,3}\d+", title, re.I):
-                    if re.match(r"^[A-Z][A-Za-z0-9 '&.-]+$", title) and title.lower() not in {"genre", "style", "year", "released", "country", "format", "label", "more images"}:
-                        pass
-                    else:
+                    pieces = title.split()
+                    if not pieces:
                         continue
 
-                title = remove_time(title)
+                    if not keep_numeric_titles and (looks_like_track_code(pieces[0]) or re.match(r"^[A-Z]\d+", pieces[0], re.I)):
+                        title = " ".join(pieces[1:])
+                    elif not keep_numeric_titles and re.match(r"^\d+(?:\.\d+)?(?:\s|$)", title):
+                        title = re.sub(r"^\d+(?:\.\d+)?\s*", "", title)
 
-                if not title:
-                    continue
+                    title = remove_time(title)
 
-                tracks.append({
-                    "artist": album_artist,
-                    "title": title
-                })
+                    if not title:
+                        continue
+
+                    normalized = title.strip().lower()
+                    if normalized in {"genre", "style", "year", "released", "country", "format", "label", "more images"}:
+                        continue
+                    if not re.search(r"[A-Za-z]", title):
+                        continue
+
+                    title = title.strip()
+
+                    if not title:
+                        continue
+
+                    tracks.append({
+                        "artist": album_artist,
+                        "title": title
+                    })
 
     return {
         "album": album,

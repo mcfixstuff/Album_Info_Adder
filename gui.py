@@ -6,6 +6,12 @@ from parser import parse_discogs
 from tagger import preview, rename_files, write_tags
 
 
+def build_preview_rows(discogs_text, folder, parse_options=None):
+    album_data = parse_discogs(discogs_text, **(parse_options or {}))
+    rows = preview(folder, album_data)
+    return album_data, rows
+
+
 def needs_review(album_data):
     if not album_data.get("tracks"):
         return True
@@ -14,12 +20,6 @@ def needs_review(album_data):
     if album_data.get("year") in {None, ""}:
         return True
     return False
-
-
-def build_preview_rows(discogs_text, folder):
-    album_data = parse_discogs(discogs_text)
-    rows = preview(folder, album_data)
-    return album_data, rows
 
 
 class VinylApp:
@@ -31,6 +31,9 @@ class VinylApp:
         self.discogs_text = tk.StringVar()
         self.folder_path = tk.StringVar()
         self.year_var = tk.StringVar()
+        self.ignore_commas_var = tk.BooleanVar(value=False)
+        self.ignore_parentheses_var = tk.BooleanVar(value=False)
+        self.keep_numeric_titles_var = tk.BooleanVar(value=False)
         self.status_var = tk.StringVar(value="Paste Discogs text and choose a folder to begin.")
 
         self._build_ui()
@@ -54,6 +57,12 @@ class VinylApp:
         ttk.Label(year_row, text="Year (optional):").pack(side="left")
         ttk.Entry(year_row, textvariable=self.year_var, width=20).pack(side="left", padx=(6, 0))
         ttk.Label(year_row, text="Leave blank to skip adding a year").pack(side="left", padx=(8, 0))
+
+        options_row = ttk.Frame(main)
+        options_row.pack(fill="x", pady=(0, 6))
+        ttk.Checkbutton(options_row, text="Ignore commas as track separators", variable=self.ignore_commas_var).pack(side="left")
+        ttk.Checkbutton(options_row, text="Ignore parentheses as track separators", variable=self.ignore_parentheses_var).pack(side="left", padx=(12, 0))
+        ttk.Checkbutton(options_row, text="Keep numeric titles", variable=self.keep_numeric_titles_var).pack(side="left", padx=(12, 0))
 
         buttons = ttk.Frame(main)
         buttons.pack(fill="x", pady=(0, 10))
@@ -79,6 +88,13 @@ class VinylApp:
             self.folder_path.set(folder)
             self.status_var.set(f"Folder selected: {folder}")
 
+    def get_parse_options(self):
+        return {
+            "ignore_commas": self.ignore_commas_var.get(),
+            "ignore_parentheses": self.ignore_parentheses_var.get(),
+            "keep_numeric_titles": self.keep_numeric_titles_var.get(),
+        }
+
     def preview(self):
         folder = self.folder_path.get().strip()
         if not folder:
@@ -91,12 +107,14 @@ class VinylApp:
             return
 
         try:
-            album_data, rows = build_preview_rows(discogs_text, folder)
+            album_data, rows = build_preview_rows(discogs_text, folder, self.get_parse_options())
             year_value = self.year_var.get().strip()
             if year_value:
                 album_data["year"] = year_value
-            elif self.year_var.get().strip() == "":
+            elif not album_data.get("year"):
                 album_data["year"] = ""
+            elif not self.year_var.get().strip():
+                self.year_var.set(album_data.get("year", ""))
         except Exception as exc:
             messagebox.showerror("Parse failed", str(exc))
             return
@@ -159,12 +177,14 @@ class VinylApp:
             return
 
         try:
-            album_data = parse_discogs(discogs_text)
+            album_data = parse_discogs(discogs_text, **self.get_parse_options())
             year_value = self.year_var.get().strip()
             if year_value:
                 album_data["year"] = year_value
-            elif self.year_var.get().strip() == "":
+            elif not album_data.get("year"):
                 album_data["year"] = ""
+            elif not self.year_var.get().strip():
+                self.year_var.set(album_data.get("year", ""))
             count = write_tags(folder, album_data)
             rename_files(folder, album_data)
         except Exception as exc:

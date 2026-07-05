@@ -82,6 +82,29 @@ def get_audio_files(folder):
     return files
 
 
+def _format_debug_context(album_data, files=None, tracks=None):
+    details = []
+    album = album_data.get("album") or ""
+    album_artist = album_data.get("album_artist") or ""
+    year = album_data.get("year") or ""
+    details.append(f"Album: {album}")
+    details.append(f"Album Artist: {album_artist}")
+    details.append(f"Year: {year}")
+
+    if files is not None:
+        details.append(f"Found files: {[file.name for file in files]}")
+
+    track_list = []
+    for index, track in enumerate(tracks or album_data.get("tracks", []), start=1):
+        artist = track.get("artist", "")
+        title = track.get("title", "")
+        track_list.append(f"{index}. {title} | artist={artist}")
+
+    details.append("Parsed tracks:")
+    details.extend(track_list or ["(none)"])
+    return "\n".join(details)
+
+
 def write_tags(folder, album_data):
     """
     Writes metadata to every supported audio file.
@@ -94,7 +117,8 @@ def write_tags(folder, album_data):
 
     if len(files) != len(tracks):
         raise ValueError(
-            f"Found {len(files)} supported audio files but parsed {len(tracks)} tracks."
+            f"Found {len(files)} supported audio files but parsed {len(tracks)} tracks.\n"
+            f"{_format_debug_context(album_data, files=files, tracks=tracks)}"
         )
 
     mutagen_file = _require_mutagen()
@@ -110,6 +134,7 @@ def write_tags(folder, album_data):
         audio["TITLE"] = [track["title"]]
         audio["TRACKNUMBER"] = [str(index)]
         audio["DATE"] = [album_data["year"]]
+        audio["ALBUM"] = [album_data.get("album") or album_data.get("album_artist") or ""]
 
         #
         # Track artist and album artist
@@ -135,7 +160,8 @@ def rename_files(folder, album_data):
 
     if len(files) != len(tracks):
         raise ValueError(
-            f"Found {len(files)} supported audio files but parsed {len(tracks)} tracks."
+            f"Found {len(files)} supported audio files but parsed {len(tracks)} tracks.\n"
+            f"{_format_debug_context(album_data, files=files, tracks=tracks)}"
         )
 
     for index, (file, track) in enumerate(zip(files, tracks), start=1):
@@ -169,7 +195,8 @@ def preview(folder, album_data):
 
     if len(files) != len(album_data["tracks"]):
         raise ValueError(
-            f"Found {len(files)} supported audio files but parsed {len(album_data['tracks'])} tracks."
+            f"Found {len(files)} supported audio files but parsed {len(album_data['tracks'])} tracks.\n"
+            f"{_format_debug_context(album_data, files=files, tracks=album_data['tracks'])}"
         )
 
     preview_rows = []
