@@ -48,6 +48,28 @@ Do You Right Tonight2:31I Can't Get This Ring Off My Finger2:45Rocky Mountain Mu
     assert "Dolly" not in titles
 
 
+def test_handle_track_codes_parses_compact_a1_b1_lists():
+    sample = """Artist – Album
+
+Year:
+2024
+
+A1		I'm Getting Sentimental Over You
+A2		On The Sunny Side Of The Street
+A3		I'll Never Smile Again
+A4		Heat Wave
+B1		There Are Such Things
+B2		Marie
+B3		Let's Get Away From It All
+B4		Oh! Look At Me Now
+"""
+    result = parse_discogs(sample, handle_track_codes=True)
+    titles = [track["title"] for track in result["tracks"]]
+    assert titles[0] == "I'm Getting Sentimental Over You"
+    assert titles[1] == "On The Sunny Side Of The Street"
+    assert titles[-1] == "Oh! Look At Me Now"
+
+
 def test_preview_error_includes_parsed_track_details(tmp_path):
     sample = {
         "album": "Demo Album",

@@ -66,6 +66,28 @@ def looks_like_track_code(text):
     return bool(re.match(r"^[A-Z]?\d+[A-Z]?$", text, re.I))
 
 
+def split_compact_track_list(text):
+    """Split a compact track list like 'A1SongA2Song2' into separate titles."""
+
+    text = text.strip()
+    if not text:
+        return []
+
+    matches = list(re.finditer(r"[A-Z]?\d+[A-Z]?", text, re.I))
+    if not matches:
+        return []
+
+    chunks = []
+    for index, match in enumerate(matches):
+        start = match.end()
+        end = matches[index + 1].start() if index + 1 < len(matches) else len(text)
+        title = text[start:end].strip()
+        title = re.sub(r"^[^A-Za-z0-9']+", "", title)
+        if title:
+            chunks.append(title)
+    return chunks
+
+
 def split_various(line):
     """
     Split:
@@ -178,7 +200,7 @@ def split_track_segments(text, ignore_commas=False, ignore_parentheses=False):
     return [text]
 
 
-def parse_discogs(text, ignore_commas=False, ignore_parentheses=False, keep_numeric_titles=False):
+def parse_discogs(text, ignore_commas=False, ignore_parentheses=False, keep_numeric_titles=False, handle_track_codes=False):
 
     lines = [clean_line(x) for x in text.splitlines()]
     lines = [x for x in lines if x]
@@ -291,6 +313,20 @@ def parse_discogs(text, ignore_commas=False, ignore_parentheses=False, keep_nume
         #
 
         else:
+            if handle_track_codes and re.search(r"[A-Z]?\d+[A-Z]?", line, re.I):
+                compact_chunks = split_compact_track_list(line)
+                if compact_chunks:
+                    for chunk in compact_chunks:
+                        title = chunk.strip()
+                        title = re.sub(r"^[A-Z]?\d+[A-Z]?", "", title, flags=re.I)
+                        title = remove_time(title)
+                        if title and re.search(r"[A-Za-z]", title):
+                            tracks.append({
+                                "artist": album_artist,
+                                "title": title.strip()
+                            })
+                    continue
+
             for segment in split_track_segments(line, ignore_commas=ignore_commas, ignore_parentheses=ignore_parentheses):
                 for chunk in split_inline_tracks(segment, keep_numeric_titles=keep_numeric_titles):
                     title = chunk

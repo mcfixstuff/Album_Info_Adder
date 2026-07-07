@@ -34,6 +34,7 @@ class VinylApp:
         self.ignore_commas_var = tk.BooleanVar(value=False)
         self.ignore_parentheses_var = tk.BooleanVar(value=False)
         self.keep_numeric_titles_var = tk.BooleanVar(value=False)
+        self.handle_track_codes_var = tk.BooleanVar(value=False)
         self.status_var = tk.StringVar(value="Paste Discogs text and choose a folder to begin.")
 
         self._build_ui()
@@ -63,6 +64,7 @@ class VinylApp:
         ttk.Checkbutton(options_row, text="Ignore commas as track separators", variable=self.ignore_commas_var).pack(side="left")
         ttk.Checkbutton(options_row, text="Ignore parentheses as track separators", variable=self.ignore_parentheses_var).pack(side="left", padx=(12, 0))
         ttk.Checkbutton(options_row, text="Keep numeric titles", variable=self.keep_numeric_titles_var).pack(side="left", padx=(12, 0))
+        ttk.Checkbutton(options_row, text="Handle A1/B1-style track codes", variable=self.handle_track_codes_var).pack(side="left", padx=(12, 0))
 
         buttons = ttk.Frame(main)
         buttons.pack(fill="x", pady=(0, 10))
@@ -93,6 +95,7 @@ class VinylApp:
             "ignore_commas": self.ignore_commas_var.get(),
             "ignore_parentheses": self.ignore_parentheses_var.get(),
             "keep_numeric_titles": self.keep_numeric_titles_var.get(),
+            "handle_track_codes": self.handle_track_codes_var.get(),
         }
 
     def preview(self):
