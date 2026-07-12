@@ -3,7 +3,7 @@ import sys
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 from pathlib import Path
-
+MULTIPLE_VALUES = "(Multiple Values)"
 try:
     from mutagen import File as MutagenFile
 except ModuleNotFoundError:  # pragma: no cover - exercised when dependency is missing
@@ -97,7 +97,8 @@ class MetadataEditorApp:
         self.folder_var = tk.StringVar()
         self.status_var = tk.StringVar(value="Choose a folder of .opus files to begin.")
         self.file_list = []
-        self.current_file = None
+        self.current_files = []
+        self.original_display = {}
         self.fields = {}
 
         self._build_ui()
@@ -117,7 +118,13 @@ class MetadataEditorApp:
         left = ttk.Frame(splitter, padding=6)
         splitter.add(left, weight=1)
 
-        self.file_tree = ttk.Treeview(left, columns=("name",), show="headings", height=16)
+        self.file_tree = ttk.Treeview(
+            left,
+            columns=("name",),
+            show="headings",
+            height=16,
+            selectmode="extended"
+        )
         self.file_tree.heading("name", text="Files")
         self.file_tree.column("name", width=220)
         self.file_tree.pack(fill="both", expand=True)
@@ -179,36 +186,98 @@ class MetadataEditorApp:
         if not selection:
             return
 
-        file_name = self.file_tree.item(selection[0], "values")[0]
-        folder = self.folder_var.get()
-        if not folder:
-            return
+        folder = Path(self.folder_var.get())
 
-        self.current_file = Path(folder, file_name)
-        try:
-            metadata = load_metadata(self.current_file)
-        except Exception as exc:
-            messagebox.showerror("Load failed", str(exc))
-            return
+        self.current_files = []
+        metadata_list = []
+
+        for item in selection:
+            file_name = self.file_tree.item(item, "values")[0]
+            path = folder / file_name
+
+            self.current_files.append(path)
+
+            try:
+                metadata_list.append(load_metadata(path))
+            except Exception as exc:
+                messagebox.showerror("Load failed", str(exc))
+                return
+
+        self.original_display = {}
 
         for key, entry in self.fields.items():
-            entry.delete(0, tk.END)
-            entry.insert(0, metadata.get(key, ""))
+            values = [metadata.get(key, "") for metadata in metadata_list]
 
+            unique = set(values)
+
+            if len(unique) == 1:
+                display = values[0]
+            else:
+                non_empty = {v for v in unique if v}
+
+                if len(non_empty) == 0:
+                    display = ""
+                else:
+                    display = MULTIPLE_VALUES
+
+            self.original_display[key] = display
+
+            entry.delete(0, tk.END)
+            entry.insert(0, display)
+            
     def save_current_file(self):
-        if not self.current_file:
-            messagebox.showwarning("No file selected", "Choose a file first.")
+        if not self.current_files:
+            messagebox.showwarning(
+                "No file selected",
+                "Choose one or more files first."
+            )
             return
 
-        values = {key: entry.get().strip() for key, entry in self.fields.items()}
+        updates = {}
+
+        for key, entry in self.fields.items():
+            current = entry.get().strip()
+            original = self.original_display.get(key, "")
+
+            # User left "(Multiple Values)" untouched.
+            # Don't modify that tag on any files.
+            if original == MULTIPLE_VALUES and current == MULTIPLE_VALUES:
+                continue
+
+            updates[key] = current
+
         try:
-            save_metadata(self.current_file, values)
+            for file_path in self.current_files:
+                metadata = load_metadata(file_path)
+
+                for key, value in updates.items():
+                    metadata[key] = value
+
+                save_metadata(file_path, metadata)
+
         except Exception as exc:
             messagebox.showerror("Save failed", str(exc))
             return
 
-        self.status_var.set(f"Saved metadata to {self.current_file.name}")
-        messagebox.showinfo("Saved", f"Saved metadata to {self.current_file.name}")
+        if len(self.current_files) == 1:
+            self.status_var.set(
+                f"Saved metadata to {self.current_files[0].name}"
+            )
+            messagebox.showinfo(
+                "Saved",
+                f"Saved metadata to {self.current_files[0].name}"
+            )
+        else:
+            self.status_var.set(
+                f"Updated metadata for {len(self.current_files)} files."
+            )
+            messagebox.showinfo(
+                "Saved",
+                f"Updated metadata for {len(self.current_files)} files."
+            )
+
+        # Reload display to refresh "(Multiple Values)" fields
+        self.on_file_selected(None)
 
 
 def main():
