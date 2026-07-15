@@ -20,5 +20,39 @@ def normalize(data: np.ndarray) -> np.ndarray:
     return data
 
 def export_flac(filepath: str, data: np.ndarray, samplerate: int) -> None:
-    """Export a single multichannel FLAC file."""
-    sf.write(filepath, data, samplerate)
+    """
+    Export decoded quadraphonic audio as a 5.1 FLAC.
+
+    Input:
+        FL
+        FR
+        RL
+        RR
+
+    Output:
+        FL
+        FR
+        Center (silent)
+        LFE (silent)
+        Surround Left
+        Surround Right
+    """
+
+    samples = data.shape[0]
+
+    output = np.zeros((samples, 6), dtype=np.float32)
+
+    output[:,0] = data[:,0]   # FL
+    output[:,1] = data[:,1]   # FR
+    output[:,2] = 0.0         # Center
+    output[:,3] = 0.0         # LFE
+    output[:,4] = data[:,2]   # Rear Left -> Surround Left
+    output[:,5] = data[:,3]   # Rear Right -> Surround Right
+
+    sf.write(
+        filepath,
+        output,
+        samplerate,
+        format="FLAC",
+        subtype="PCM_16"
+    )
