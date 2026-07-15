@@ -1,58 +1,122 @@
 import soundfile as sf
 import numpy as np
 
+
 def load_wav(filepath: str) -> tuple[np.ndarray, int]:
-    """Load a stereo 16-bit 48,000 Hz PCM WAV file."""
-    data, samplerate = sf.read(filepath)
-    if len(data.shape) != 2 or data.shape[1] != 2 or samplerate != 48000:
-        raise ValueError("Unsupported format: Must be stereo, 48kHz, and 16-bit.")
-    return data.astype(np.float32), samplerate
+    """
+    Load a stereo 48kHz PCM WAV file.
+
+    Returns:
+        data:
+            Float32 numpy array shaped (samples, 2)
+
+        samplerate:
+            Sample rate
+    """
+
+    data, samplerate = sf.read(
+        filepath,
+        dtype="float32"
+    )
+
+    if (
+        len(data.shape) != 2
+        or data.shape[1] != 2
+        or samplerate != 48000
+    ):
+        raise ValueError(
+            "Unsupported format: Must be stereo 48kHz PCM WAV."
+        )
+
+    return data, samplerate
+
 
 def to_float32(data: np.ndarray) -> np.ndarray:
-    """Convert PCM int16 data to float32."""
-    return data / (2**15)
+    """
+    Convert integer PCM audio to float32.
+
+    Note:
+    soundfile already returns float32 when requested,
+    so this is only needed for raw integer data.
+    """
+
+    return data.astype(np.float32) / 32768.0
+
 
 def normalize(data: np.ndarray) -> np.ndarray:
-    """Normalize audio data to prevent clipping."""
-    max_amplitude = np.max(np.abs(data))
-    if max_amplitude > 1.0:
-        return data / max_amplitude
-    return data
-
-def export_flac(filepath: str, data: np.ndarray, samplerate: int) -> None:
     """
-    Export decoded quadraphonic audio as a 5.1 FLAC.
+    Normalize audio data to prevent clipping.
 
-    Input:
-        FL
-        FR
-        RL
-        RR
+    All channels are scaled together.
+    """
 
-    Output:
-        FL
-        FR
+    peak = np.max(np.abs(data))
+
+    if peak > 1.0:
+        data = data * (0.98 / peak)
+
+    return data.astype(np.float32)
+
+
+def export_flac(
+    filepath: str,
+    data: np.ndarray,
+    samplerate: int
+) -> None:
+    """
+    Export multichannel FLAC.
+
+    Expected input:
+
+    Channel 0:
+        Front Left
+
+    Channel 1:
+        Front Right
+
+    Channel 2:
         Center (silent)
+
+    Channel 3:
         LFE (silent)
+
+    Channel 4:
         Surround Left
+
+    Channel 5:
         Surround Right
     """
 
-    samples = data.shape[0]
+    print("----------------------------")
+    print("Preparing FLAC export")
+    print("Array shape:", data.shape)
+    print("Sample rate:", samplerate)
+    print("Channel count:", data.shape[1])
 
-    output = np.zeros((samples, 6), dtype=np.float32)
+    for channel in range(data.shape[1]):
+        print(
+            f"Channel {channel} peak:",
+            np.max(np.abs(data[:, channel]))
+        )
 
-    output[:,0] = data[:,0]   # FL
-    output[:,1] = data[:,1]   # FR
-    output[:,2] = 0.0         # Center
-    output[:,3] = 0.0         # LFE
-    output[:,4] = data[:,2]   # Rear Left -> Surround Left
-    output[:,5] = data[:,3]   # Rear Right -> Surround Right
+    print("----------------------------")
+
+    if data.ndim != 2:
+        raise ValueError(
+            "Audio data must be a 2D numpy array."
+        )
+
+    if data.shape[1] != 6:
+        raise ValueError(
+            f"Expected 6 channels for 5.1 FLAC, got {data.shape[1]}"
+        )
 
     sf.write(
         filepath,
-        output,
+        data,
         samplerate,
         format="FLAC",
         subtype="PCM_16"
     )
+
+    print("FLAC export complete")

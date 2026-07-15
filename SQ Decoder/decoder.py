@@ -1,71 +1,181 @@
 import numpy as np
 from scipy.signal import hilbert
 
-def decode_sq(left: np.ndarray, right: np.ndarray) -> np.ndarray:
+
+PHASE_FACTOR = 0.70710678
+
+
+def prevent_clipping(data: np.ndarray) -> np.ndarray:
     """
-    Decode stereo CBS SQ encoded audio into four discrete channels using a fixed-matrix approach.
-    
-    The process includes generating phase-shifted signals and applying a decoding matrix to create
-    the Front Left (FL), Front Right (FR), Rear Left (RL), and Rear Right (RR) channels.
-    
+    Scale all channels equally if the decoded audio exceeds 1.0.
+
     Parameters:
-    left (np.ndarray): Left channel data in float32 range (-1.0, +1.0).
-    right (np.ndarray): Right channel data in float32 range (-1.0, +1.0).
-    
+        data: Multichannel float32 audio array.
+
     Returns:
-    np.ndarray: A NumPy array with shape (samples, 4) containing the four decoded channels.
-    
-    Why Hilbert transforms are used:
-    - The Hilbert transform is used to generate a quadrature signal which represents an approximate
-      +90 degree phase-shifted version of the original channel. This is essential for capturing
-      the in-phase and out-of-phase components needed for quadraphonic decoding.
-      
-    Why phase information is required:
-    - Quadraphonic sound relies on both amplitude and phase differences between channels to
-      separate front and rear audio signals accurately.
-      
-    This is a fixed matrix decoder:
-    - The current implementation uses a predefined matrix to combine the original left and right
-      channels with their phase-shifted counterparts. While this approach works reasonably well,
-      it does not include advanced logic steering which could potentially improve separation quality.
-    
-    Future improvements could add logic steering:
-    - Implementing a more sophisticated decoding algorithm that dynamically adjusts based on the
-      content of the audio signal could lead to better channel separation.
+        Scaled float32 audio array.
     """
-    # Generate phase-shifted signals using Hilbert transform
-    L_90 = np.imag(hilbert(left))
-    R_90 = np.imag(hilbert(right))
-    
-    # Define the fixed decoding matrix
-    decoder_matrix = np.array([
-        [1, 0.70710678 * -1],  # Front Left (FL)
-        [0, 0.70710678 * 1],   # Front Right (FR)
-        [1, 0.70710678 * -1],  # Rear Left (RL)
-        [-1, 0.70710678 * 1]    # Rear Right (RR)
-    ])
-    
-    # Apply the decoding matrix
-    decoded_channels = np.dot(np.column_stack((left, right)), decoder_matrix.T).astype(np.float32)
-    
-    # Prevent clipping by scaling all channels together if needed
-    peak_value = np.max(np.abs(decoded_channels))
+
+    peak_value = np.max(np.abs(data))
+
     if peak_value > 1.0:
         scale = 0.98 / peak_value
-        decoded_channels *= scale
-    
-    return decoded_channels
+        data *= scale
+
+    return data.astype(np.float32)
+
+
+def decode_sq(left: np.ndarray, right: np.ndarray) -> np.ndarray:
+    """
+    Basic CBS SQ matrix decoder.
+
+    Input:
+        Left and Right stereo SQ encoded channels.
+
+    Output:
+        4 channels:
+        FL, FR, RL, RR
+
+    This is a simplified fixed matrix decoder.
+    It does not include Tate/Fosgate logic steering.
+    """
+
+    # Generate quadrature phase signals
+    L90 = np.imag(hilbert(left))
+    R90 = np.imag(hilbert(right))
+
+    decoded = np.zeros(
+        (len(left), 4),
+        dtype=np.float32
+    )
+
+    # Front channels
+    decoded[:, 0] = left + (PHASE_FACTOR * R90)
+    decoded[:, 1] = right - (PHASE_FACTOR * L90)
+
+    # Rear channels
+    decoded[:, 2] = left - (PHASE_FACTOR * R90)
+    decoded[:, 3] = right + (PHASE_FACTOR * L90)
+
+    return prevent_clipping(decoded)
+
+
+def decode_qs(left: np.ndarray, right: np.ndarray) -> np.ndarray:
+    """
+    Basic Sansui QS matrix decoder.
+
+    Input:
+        Left and Right QS encoded channels.
+
+    Output:
+        4 channels:
+        FL, FR, RL, RR
+
+    This is a simplified fixed matrix QS decoder.
+    """
+
+    # Generate quadrature phase signals
+    L90 = np.imag(hilbert(left))
+    R90 = np.imag(hilbert(right))
+
+    decoded = np.zeros(
+        (len(left), 4),
+        dtype=np.float32
+    )
+
+    # Front channels
+    decoded[:, 0] = left
+    decoded[:, 1] = right
+
+    # Rear channels extracted from phase information
+    decoded[:, 2] = left - R90
+    decoded[:, 3] = right + L90
+
+    return prevent_clipping(decoded)
+
+
+def decode_ev4(left: np.ndarray, right: np.ndarray) -> np.ndarray:
+    """
+    Basic Electro-Voice Stereo-4 / Dynaquad decoder.
+
+    Input:
+        Left and Right EV-4 encoded channels.
+
+    Output:
+        4 channels:
+        FL, FR, RL, RR
+
+    This is a simplified fixed matrix decoder.
+    """
+
+    decoded = np.zeros(
+        (len(left), 4),
+        dtype=np.float32
+    )
+
+    # Front channels
+    decoded[:, 0] = left
+    decoded[:, 1] = right
+
+    # Rear channels from difference information
+    decoded[:, 2] = (left - right) * PHASE_FACTOR
+    decoded[:, 3] = (right - left) * PHASE_FACTOR
+
+    return prevent_clipping(decoded)
+
 
 def sq_decoder(stereo_data: np.ndarray) -> np.ndarray:
     """
-    Decode stereo CBS SQ encoded audio into four discrete channels.
-    
-    Parameters:
-    stereo_data (np.ndarray): Stereo audio data with shape (samples, 2).
-    
-    Returns:
-    np.ndarray: A NumPy array with shape (samples, 4) containing the four decoded channels.
+    Decode SQ stereo input.
+
+    Input:
+        Shape:
+        (samples, 2)
+
+    Output:
+        Shape:
+        (samples, 4)
     """
-    left_channel = stereo_data[:, 0]
-    right_channel = stereo_data[:, 1]
-    return decode_sq(left_channel, right_channel)
+
+    left = stereo_data[:, 0]
+    right = stereo_data[:, 1]
+
+    return decode_sq(left, right)
+
+
+def qs_decoder(stereo_data: np.ndarray) -> np.ndarray:
+    """
+    Decode QS stereo input.
+
+    Input:
+        Shape:
+        (samples, 2)
+
+    Output:
+        Shape:
+        (samples, 4)
+    """
+
+    left = stereo_data[:, 0]
+    right = stereo_data[:, 1]
+
+    return decode_qs(left, right)
+
+
+def ev4_decoder(stereo_data: np.ndarray) -> np.ndarray:
+    """
+    Decode EV-4 Stereo-4 input.
+
+    Input:
+        Shape:
+        (samples, 2)
+
+    Output:
+        Shape:
+        (samples, 4)
+    """
+
+    left = stereo_data[:, 0]
+    right = stereo_data[:, 1]
+
+    return decode_ev4(left, right)
