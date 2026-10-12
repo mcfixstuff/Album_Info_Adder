@@ -160,6 +160,9 @@ class MetadataEditorApp:
 
         ttk.Label(main, textvariable=self.status_var, wraplength=850).pack(anchor="w", pady=(10, 0))
 
+        # --- ADD THIS LINE BELOW ---
+        self.root.bind("<Return>", lambda event: self.save_current_file())
+
     def open_folder(self):
         folder = filedialog.askdirectory(title="Choose folder with .opus files")
         if not folder:
@@ -263,18 +266,12 @@ class MetadataEditorApp:
             self.status_var.set(
                 f"Saved metadata to {self.current_files[0].name}"
             )
-            messagebox.showinfo(
-                "Saved",
-                f"Saved metadata to {self.current_files[0].name}"
-            )
+            
         else:
             self.status_var.set(
                 f"Updated metadata for {len(self.current_files)} files."
             )
-            messagebox.showinfo(
-                "Saved",
-                f"Updated metadata for {len(self.current_files)} files."
-            )
+            
 
         # Reload display to refresh "(Multiple Values)" fields
         self.on_file_selected(None)
